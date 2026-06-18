@@ -15,13 +15,14 @@
 using namespace ocudu;
 
 // Select the CRC for the decoder based on the TBS and the number of codeblocks.
-static crc_calculator* select_crc(pusch_decoder_cuda_impl::sch_crc& crcs, unsigned tbs, unsigned nof_blocks)
+static crc_calculator* select_crc(pusch_decoder_cuda_impl::sch_crc& crcs, units::bits tbs, unsigned nof_blocks)
 {
+  using namespace units::literals;
   if (nof_blocks > 1) {
     return crcs.crc24B.get();
   }
   // From here, we have only 1 codeblock.
-  if (tbs > MAX_BITS_CRC16) {
+  if (tbs > 3824_bits) {
     return crcs.crc24A.get();
   }
   // One short codeblock.
@@ -81,6 +82,7 @@ pusch_decoder_buffer& pusch_decoder_cuda_impl::new_data(span<uint8_t>           
                to_string(previous_state));
 
   transport_block  = transport_block_;
+  tb_size          = units::bytes(transport_block.size());
   unique_rm_buffer = std::move(unique_rm_buffer_);
   result_notifier  = &notifier;
   current_config   = cfg;
@@ -91,15 +93,15 @@ pusch_decoder_buffer& pusch_decoder_cuda_impl::new_data(span<uint8_t>           
   nof_ulsch_softbits.reset();
 
   // Compute segmentation configuration.
-  segmentation_config.base_graph = current_config.base_graph;
-  segmentation_config.rv         = current_config.rv;
-  segmentation_config.mod        = current_config.mod;
-  segmentation_config.Nref       = current_config.Nref;
-  segmentation_config.nof_layers = current_config.nof_layers;
+  segmentation_config.transport_block_size = tb_size;
+  segmentation_config.base_graph           = current_config.base_graph;
+  segmentation_config.rv                   = current_config.rv;
+  segmentation_config.mod                  = current_config.mod;
+  segmentation_config.Nref                 = current_config.Nref;
+  segmentation_config.nof_layers           = current_config.nof_layers;
 
   // Set the CB counters.
-  unsigned tb_size     = transport_block.size() * BITS_PER_BYTE;
-  nof_codeblocks       = compute_nof_codeblocks(units::bits(tb_size), segmentation_config.base_graph);
+  nof_codeblocks       = compute_nof_codeblocks(tb_size.to_bits(), segmentation_config.base_graph);
   cb_task_counter      = nof_codeblocks;
   available_cb_counter = 0;
 
@@ -109,7 +111,7 @@ pusch_decoder_buffer& pusch_decoder_cuda_impl::new_data(span<uint8_t>           
                nof_codeblocks);
 
   // Select CRC calculator for inner codeblock checks.
-  block_crc = select_crc(crc_set, tb_size, nof_codeblocks);
+  block_crc = select_crc(crc_set, tb_size.to_bits(), nof_codeblocks);
 
   // Reset CRCs if new data is flagged.
   span<bool> cb_crcs = unique_rm_buffer->get_codeblocks_crc();
@@ -161,9 +163,6 @@ void pusch_decoder_cuda_impl::set_nof_softbits(units::bits nof_softbits)
   // Select view of LLRs.
   span<const log_likelihood_ratio> llrs =
       span<const log_likelihood_ratio>(softbits_buffer).first(nof_ulsch_softbits->value());
-
-  // Recall that the TB is in packed format.
-  unsigned tb_size = transport_block.size() * BITS_PER_BYTE;
 
   // Generate segmentation information and CB views.
   segmenter->segment(codeblock_llrs, llrs, segmentation_config);
@@ -272,7 +271,6 @@ void pusch_decoder_cuda_impl::on_end_softbits()
   span<const log_likelihood_ratio> llrs = span<const log_likelihood_ratio>(softbits_buffer).first(softbits_count);
 
   // Recall that the TB is in packed format.
-  unsigned tb_size                   = transport_block.size() * BITS_PER_BYTE;
   segmentation_config.nof_ch_symbols = softbits_count / modulation_order;
   segmenter->segment(codeblock_llrs, llrs, segmentation_config);
 
@@ -404,7 +402,7 @@ void pusch_decoder_cuda_impl::join_and_notify()
 
     // Copy the code block only nif the CRC is OK.
     if (stats.tb_crc_ok) {
-      const bit_buffer cb_data = unique_rm_buffer->get_codeblock_data_bits(0, transport_block.size() * BITS_PER_BYTE);
+      const bit_buffer cb_data = unique_rm_buffer->get_codeblock_data_bits(0, tb_size.value());
       ocuduvec::copy(transport_block, cb_data.get_buffer());
     }
   } else if (std::all_of(cb_crcs.begin(), cb_crcs.end(), [](bool a) { return a; })) {

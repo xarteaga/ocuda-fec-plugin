@@ -18,12 +18,6 @@
 
 namespace ocudu {
 
-/// Number of bits in one byte.
-constexpr unsigned BITS_PER_BYTE = 8;
-
-/// Maximum TBS that implies a 16-bit CRC.
-constexpr unsigned MAX_BITS_CRC16 = 3824;
-
 /// Implementation of the PUSCH decoder.
 class pusch_decoder_cuda_impl : public pusch_decoder, private pusch_decoder_buffer
 {
@@ -170,6 +164,8 @@ private:
   std::array<unsigned, MAX_NOF_SEGMENTS> cb_stats;
   /// Number of UL-SCH codeword softbits. If set, the decoder will start decoding codeblocks as they become available.
   std::optional<units::bits> nof_ulsch_softbits;
+  /// Current transport block size in bytes.
+  units::bytes tb_size;
   /// Number of codeblocks in the current codeword.
   unsigned nof_codeblocks;
   /// CRC calculator for inner codeblock checks.
