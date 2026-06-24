@@ -1,103 +1,22 @@
-// SPDX-FileCopyrightText: Copyright (C) 2021-2026 Software Radio Systems Limited
-// SPDX-License-Identifier: BSD-3-Clause-Open-MPI
-// Portions of this file may implement 3GPP specifications, which may be subject to additional licensing requirements.
-#include "ocuda-fec/cuda_helpers/device_vector.h"
-#include "ocuda-fec/cuda_helpers/ldpc_decoder.h"
-#include "ocuda-fec/cuda_helpers/ldpc_decoder_cuda_helpers.h"
+// SPDX-FileCopyrightText: Copyright (C) 2021-2026 Software Radio Systems
+// Limited SPDX-License-Identifier: BSD-3-Clause-Open-MPI Portions of this file
+// may implement 3GPP specifications, which may be subject to additional
+// licensing requirements.
 
-using namespace ocudu;
-using namespace cuda;
+#pragma once
 
-class ldpc_decoder_stream_impl : public ldpc_decoder
-{
-public:
-  ldpc_decoder_stream_impl(span<const base_graph_description> base_graph_descriptions_) :
-    base_graph_descriptions(base_graph_descriptions_)
-  {
-  }
+#include "device_math_helpers.h"
+#include "ocuda-fec/cuda_helpers/base_graph_description.h"
+#include <cstdint>
 
-  void ldpc_decode(span<const ldpc_decoder_cb_arguments> codeblocks, cuda_stream& stream) override;
+namespace ocudu {
+namespace cuda {
 
-private:
-  device_vector<ldpc_decoder_cb_arguments, max_nof_codeblocks> d_codeblocks;
-  span<const base_graph_description>                           base_graph_descriptions;
-};
-
-__device__ static int cuda_device_llr_promotion_sum(int a, int b)
-{
-  static constexpr int infinity = 127;
-  static constexpr int max_val  = 120;
-
-  if (a == -b) {
-    return 0;
-  }
-
-  if (std::abs(a) == infinity) {
-    return a;
-  }
-
-  if (std::abs(b) == infinity) {
-    return b;
-  }
-
-  // When not dealing with special cases, promotion sum: if the sum exceeds LLR_MAX (in absolute value), then return
-  // LLR_INFTY (with the proper sign).
-  int tmp = a + b;
-  if (std::abs(tmp) > max_val) {
-    tmp = ((tmp > 0) ? infinity : -infinity);
-  }
-
-  return tmp;
-}
-
-__device__ static int cuda_device_llr_sum(int a, int b)
-{
-  static constexpr int infinity = 127;
-  static constexpr int max_val  = 120;
-
-  if (a == -b) {
-    return 0;
-  }
-
-  if (std::abs(a) == infinity) {
-    return a;
-  }
-
-  if (std::abs(b) == infinity) {
-    return b;
-  }
-
-  // When not dealing with special cases, promotion sum: if the sum exceeds LLR_MAX (in absolute value), then return
-  // LLR_INFTY (with the proper sign).
-  int tmp = a + b;
-  tmp     = max(tmp, -max_val);
-  tmp     = min(tmp, +max_val);
-
-  return tmp;
-}
-
-__device__ static int cuda_copysign(int a, int b)
-{
-  if (b < 0) {
-    return -std::abs(a);
-  }
-  return std::abs(a);
-}
-
-/// Apply the LDPC decoder scaling factor of the min-sum algorithm that is 0.8 and rounding to the nearest integer.
-__device__ static int cuda_ldpc_decoder_scale_llr(int value)
-{
-  static constexpr int infinity = 127;
-
-  if (std::abs(value) != infinity) {
-    value = (value * 8 + 5) / 10;
-  }
-
-  return value;
-}
-
-__device__ static void
-cuda_sanitize_soft_bits(int8_t* soft_bits, unsigned nof_llrs, unsigned lifting_size, unsigned bg_N_full)
+__device__ static void cuda_load_soft_bits(int8_t*       soft_bits,
+                                           const int8_t* rm_buffer,
+                                           unsigned      nof_llrs,
+                                           unsigned      lifting_size,
+                                           unsigned      bg_N_full)
 {
   static constexpr int8_t soft_bits_clamp_low  = -64;
   static constexpr int8_t soft_bits_clamp_high = 64;
@@ -118,7 +37,7 @@ cuda_sanitize_soft_bits(int8_t* soft_bits, unsigned nof_llrs, unsigned lifting_s
       if (absolute_idx < soft_bits_begin) {
         soft_bits[absolute_idx] = 0;
       } else if (absolute_idx < soft_bits_end) {
-        int8_t this_soft_bit    = soft_bits[absolute_idx];
+        int8_t this_soft_bit    = rm_buffer[absolute_idx - soft_bits_begin];
         soft_bits[absolute_idx] = max(soft_bits_clamp_low, min(soft_bits_clamp_high, this_soft_bit));
       } else {
         soft_bits[absolute_idx] = 0;
@@ -353,60 +272,5 @@ static __device__ void cuda_ldpc_decoder_get_hard_bits(uint8_t* output, int8_t* 
   }
 }
 
-static __global__ void cuda_ldpc_decode(const base_graph_description*    base_graph_descriptions,
-                                        const ldpc_decoder_cb_arguments* codeblocks,
-                                        unsigned                         nof_codeblocks)
-{
-  unsigned cb_idx_grid = blockIdx.z * blockDim.z + threadIdx.z;
-  unsigned nof_cb_grid = gridDim.z * blockDim.z;
-
-  // Iterate for all codeblocks.
-  for (unsigned cb_idx = cb_idx_grid; cb_idx < nof_codeblocks; cb_idx += nof_cb_grid) {
-    // Extract codeblock configuration.
-    const ldpc_decoder_cb_arguments&     cb_args   = codeblocks[cb_idx];
-    const ldpc_decoder_cb_configuration& cb_config = cb_args.cb_configuration;
-
-    const base_graph_check_node_info* bg_info = base_graph_descriptions[cb_config.bg_info_pos].check_nodes_info;
-
-    // Sanitize soft bits.
-    cuda_sanitize_soft_bits(cb_config.soft_bits, cb_config.nof_llr, cb_config.lifting_size, cb_config.bg_N_full);
-
-    // Perform decoding iterations.
-    for (unsigned iteration = 0; iteration != cb_config.max_nof_iterations; ++iteration) {
-      // Process check nodes.
-      for (unsigned i_layer = 0; i_layer != cb_config.nof_layers; ++i_layer) {
-        cuda_ldpc_decoder_process_check_node(cb_config.soft_bits,
-                                             cb_config.check_to_var,
-                                             bg_info,
-                                             i_layer,
-                                             cb_config.lifting_size,
-                                             cb_config.bg_N_high_rate,
-                                             iteration != 0);
-      }
-    }
-
-    // Perform hard decision.
-    cuda_ldpc_decoder_get_hard_bits(cb_args.output, cb_config.soft_bits, cb_config.message_size_bytes);
-  }
-}
-
-void ldpc_decoder_stream_impl::ldpc_decode(span<const ocudu::cuda::ldpc_decoder_cb_arguments> codeblocks,
-                                           cuda_stream&                                       stream)
-{
-  unsigned nof_codeblocks = codeblocks.size();
-
-  d_codeblocks.resize(nof_codeblocks);
-
-  copy_host_to_device(d_codeblocks.get(), codeblocks, stream);
-
-  dim3 block_size(256, 4, 1);
-  dim3 grid_size(1, 1, nof_codeblocks);
-
-  cuda_ldpc_decode<<<grid_size, block_size, 0, static_cast<cudaStream_t>(stream.get())>>>(
-      base_graph_descriptions.data(), d_codeblocks.get().data(), nof_codeblocks);
-}
-
-std::unique_ptr<ldpc_decoder> ldpc_decoder::create(span<const base_graph_description> base_graph_descriptions)
-{
-  return std::make_unique<ldpc_decoder_stream_impl>(base_graph_descriptions);
-}
+} // namespace cuda
+} // namespace ocudu

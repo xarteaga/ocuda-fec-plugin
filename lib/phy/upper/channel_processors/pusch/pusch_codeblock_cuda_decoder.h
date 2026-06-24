@@ -92,20 +92,16 @@ public:
   /// Reverts the rate matching process and applies LDPC decoding.
   ///
   /// \param[out] cb_data            Code block data after decoding.
-  /// \param[in,out] rm_buffer       Rate matching buffer.
   /// \param[in] cb_llrs             New soft bits to write in the soft buffer.
   /// \param[in] new_data            Set to true for indicating a new transmission.
   /// \param[in] crc_poly            CRC polynomial used for the code block.
-  /// \param[in] use_early_stop      Set to true to allow the LDPC decoder to stop decoding when the CRC matches.
   /// \param[in] nof_ldpc_iterations Number of LDPC decoder iterations.
-  /// \param[in] force_decoding      Forces decoding even if the number of valid soft bits is insufficient.
   /// \param[in] metadata            Code block metadata.
   /// \return The number of iterations if the CRC matches after the LDPC decoder. Otherwise, \c std::nullopt.
   void decode(bit_buffer                                   cb_data,
-              span<log_likelihood_ratio>                   rm_buffer,
               span<const log_likelihood_ratio>             cb_llrs,
               bool                                         new_data,
-              ocudu::crc_generator_poly                    crc_poly,
+              crc_generator_poly                           crc_poly,
               unsigned                                     nof_ldpc_iterations,
               const codeblock_metadata&                    metadata,
               pusch_codeblock_cuda_decoder_callback_func&& callback_);
