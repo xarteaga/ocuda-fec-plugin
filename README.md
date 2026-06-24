@@ -17,6 +17,9 @@ This plugin provides GPU-offloaded LDPC decoding for the 5G PUSCH (Physical Upli
 ```
 include/ocuda-fec/          Public headers (consumed by OCUDU core)
 ├── cuda_helpers/           RAII CUDA streams, device memory, host-to-device promise, LDPC decoder interface
+├── instrumentation/
+│   └── traces/
+│       └── l1_cuda_traces.h  L1-level CUDA event tracer (conditional on OCUDU_L1_DL_TRACE / OCUDU_L1_UL_TRACE)
 └── phy/upper/channel_coding/
     ├── ldpc_decoder_cuda.h   Per-codeblock decoder (config + decode)
     └── ldpc_decoder_cuda_backend.h  Base class + create_asynchronous_backend() factory
@@ -30,11 +33,14 @@ lib/                        Source files
 │   ├── device_ldpc_decoder.h         __device__ check-node / variable-node processing
 │   ├── device_ldpc_rate_dematcher.h  __device__ rate dematching
 │   └── device_math_helpers.h         __device__ soft-bit loading
+├── instrumentation/            CUDA tracing support
+│   └── traces/
+│       └── l1_cuda_traces.cpp  L1 event tracer definition
 └── phy/upper/
     ├── channel_coding/             LDPC decoder implementation
     │   ├── ldpc_decoder_cuda_backend.cpp                   Base graph upload to GPU
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.h        cuda_ldpc_decoder_batch + async backend (128-stream pool)
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp      128-stream pool, deferred decode + wait loop
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.h        cuda_ldpc_decoder_batch + multi-phase pipeline
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp      128-stream pool, pipeline with is_idle() phases
     │   └── ldpc_decoder_cuda_impl.cpp                      Per-codeblock: config, H2D queue, backend call
     └── channel_processors/pusch/     PUSCH integration layer
         ├── factories.cpp                       Factory → creates pusch_decoder instances
@@ -43,11 +49,12 @@ lib/                        Source files
         └── pusch_decoder_buffer_dummy.h        Dummy buffer for testing (no-op PUSCH decoder)
 ```
 
-Three static libraries are built:
+Four static libraries are built:
 
 | Library | Purpose |
 |---------|---------|
 | `ocuda_ldpc_decoder` | Core CUDA kernels: stream management, H2D/D2H helpers, LDPC solver |
+| `ocuda_cuda_traces` | L1-level CUDA event tracing for latency analysis |
 | `ocudu_cuda_ldpc` | Base graph upload, async backend (128-stream pool), per-codeblock LDPC facade |
 | `ocuda_pusch_decoder` | PUSCH decoder integration (factory, codeblock dispatch, CRC) |
 
