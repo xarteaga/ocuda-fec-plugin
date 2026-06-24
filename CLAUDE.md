@@ -24,7 +24,7 @@ Key CMake variables:
 
 | Library | Sources | Links |
 |---------|---------|-------|
-| `ocuda_ldpc_decoder` | `cuda_stream.cu`, `ldpc_decoder_cuda_helpers.cu`, `sch_decoder.cu` | `CUDA::cudart` |
+| `ocuda_ldpc_decoder` | `cuda_stream.cu`, `ldpc_decoder_cuda_helpers.cu`, `ldpc_decoder_impl.cu` | `CUDA::cudart` |
 | `ocudu_cuda_ldpc` | `ldpc_decoder_cuda_backend.cpp`, `ldpc_decoder_cuda_asynchronous_backend.cpp`, `ldpc_decoder_cuda_impl.cpp` | `ocuda_ldpc_decoder`, `ocudu_ldpc` |
 | `ocuda_pusch_decoder` | `factories.cpp`, `pusch_codeblock_cuda_decoder.cpp`, `pusch_decoder_cuda_impl.cpp` | `ocudu_upper_phy_support`, `ocudu_ran` |
 
@@ -46,14 +46,15 @@ include/ocuda-fec/                      Public headers (consumed by OCUDU core)
     └── ldpc_decoder_cuda_backend.h     Base class + create_asynchronous_backend() factory
 
 lib/
-├── cuda_helpers/                       CUDA device code (.cu)
-│   ├── sch_decoder.cu                  Main GPU kernel: cuda_sch_decode
-│   │                                 → rate dematch → load soft bits → LDPC iterations → hard decision
+├── cuda_helpers/                       CUDA device code (.cu) and device helpers (device_*.h)
+│   ├── ldpc_decoder_impl.cu        Main GPU kernel: cuda_sch_decode + ldpc_decoder::create factory
+│   │                             → rate dematch → load soft bits → LDPC iterations → hard decision
+│   ├── ldpc_decoder_impl.h         ldpc_decoder_impl class declaration
 │   ├── ldpc_decoder_cuda_helpers.cu    cudaMalloc/memcpy/memset wrappers
 │   ├── cuda_stream.cu                  cudaStream_t lifecycle
 │   ├── device_ldpc_decoder.h           __device__ check-node / variable-node processing
 │   ├── device_ldpc_rate_dematcher.h    __device__ rate dematching
-│   └── device_math_helpers.h           __device__ soft-bit loading (soft-bit loading moved here from sch_decoder.cu)
+│   └── device_math_helpers.h           __device__ soft-bit loading
 └── phy/upper/
     ├── channel_coding/
     │   ├── ldpc_decoder_cuda_backend.cpp              Precomputes & uploads LDPC base graph adjacency to GPU
@@ -81,7 +82,7 @@ softbits → pusch_decoder_cuda_impl (state machine)
               ├─ rate_match()  – GPU rate dematching + HARQ combining
               └─ decode()      – GPU LDPC message-passing → CRC check → async callback
                     │
-                    └─ cuda_sch_decode kernel (sch_decoder.cu)
+                    └─ cuda_sch_decode kernel (ldpc_decoder_impl.cu)
                          rate_dematch → load_soft_bits → LDPC iterations → hard_bits
 ```
 
@@ -93,7 +94,7 @@ softbits → pusch_decoder_cuda_impl (state machine)
 | `cuda_ldpc_decoder_asynchronous_backend` | Pool of 128 CUDA streams, deferred decode + wait loop (moved to local header `lib/.../ldpc_decoder_cuda_asynchronous_backend.h`) |
 | `cuda_ldpc_decoder_batch` | Internal: batches up to 32 codeblocks per stream, enqueues, checks completion (moved to local header) |
 | `ldpc_decoder_cuda` | Per-codeblock facade: computes LDPC config, queues H2D, calls backend |
-| `ldpc_decoder` (cuda namespace) | Abstract batch decoder interface; implemented by `ldpc_decoder_stream_impl` |
+| `ldpc_decoder` (cuda namespace) | Abstract batch decoder interface; implemented by `ldpc_decoder_impl` |
 | `pusch_codeblock_cuda_decoder` | Wraps rate dematcher + decoder + CRC for one codeblock |
 | `pusch_decoder_cuda_impl` | Full PUSCH decoder: collects softbits, segments, dispatches codeblocks, joins results |
 | `host_to_device_promise<T>` | RAII wrapper that delays an async H2D transfer until `.transfer()` is called |
@@ -111,7 +112,7 @@ softbits → pusch_decoder_cuda_impl (state machine)
 - This plugin depends on the OCUDU parent project's headers — do not modify parent paths
 - New `.cu` files need to be added to `lib/cuda_helpers/CMakeLists.txt`
 - New C++ sources need to be added to their respective CMakeLists.txt (`channel_coding/` or `channel_processors/pusch/`)
-- CUDA kernels live in `lib/cuda_helpers/sch_decoder.cu`; device helpers in `device_*.h`
+- CUDA kernels live in `lib/cuda_helpers/ldpc_decoder_impl.cu`; device helpers in `device_*.h`
 - Host-side code lives in `lib/cuda_helpers/ldpc_decoder_cuda_helpers.cu` and `.cpp` files
 - All libraries are registered with the parent build via `add_to_exported_libs()`
 - Use the existing `ocudu_assert()` pattern consistently; avoid `printf` (the codebase already has a stray `fmt::println` in `pusch_decoder_cuda_impl.cpp` that should probably use the logger)
