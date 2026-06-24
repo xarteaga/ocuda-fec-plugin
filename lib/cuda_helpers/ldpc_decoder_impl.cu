@@ -5,27 +5,10 @@
 #include "device_ldpc_decoder.h"
 #include "device_ldpc_rate_dematcher.h"
 #include "device_math_helpers.h"
-#include "ocuda-fec/cuda_helpers/device_vector.h"
-#include "ocuda-fec/cuda_helpers/ldpc_decoder.h"
-#include "ocuda-fec/cuda_helpers/ldpc_decoder_cuda_helpers.h"
+#include "ldpc_decoder_impl.h"
 
 using namespace ocudu;
 using namespace cuda;
-
-class ldpc_decoder_stream_impl : public ldpc_decoder
-{
-public:
-  ldpc_decoder_stream_impl(span<const base_graph_description> base_graph_descriptions_) :
-    base_graph_descriptions(base_graph_descriptions_)
-  {
-  }
-
-  void ldpc_decode(span<const ldpc_decoder_cb_arguments> codeblocks, cuda_stream& stream) override;
-
-private:
-  device_vector<ldpc_decoder_cb_arguments, max_nof_codeblocks> d_codeblocks;
-  span<const base_graph_description>                           base_graph_descriptions;
-};
 
 static __global__ void cuda_sch_decode(const base_graph_description*    base_graph_descriptions,
                                        const ldpc_decoder_cb_arguments* codeblocks,
@@ -79,8 +62,12 @@ static __global__ void cuda_sch_decode(const base_graph_description*    base_gra
   }
 }
 
-void ldpc_decoder_stream_impl::ldpc_decode(span<const ocudu::cuda::ldpc_decoder_cb_arguments> codeblocks,
-                                           cuda_stream&                                       stream)
+ldpc_decoder_impl::ldpc_decoder_impl(span<const base_graph_description> base_graph_descriptions_) :
+  base_graph_descriptions(base_graph_descriptions_)
+{
+}
+
+void ldpc_decoder_impl::ldpc_decode(span<const ldpc_decoder_cb_arguments> codeblocks, cuda_stream& stream)
 {
   unsigned nof_codeblocks = codeblocks.size();
 
@@ -97,5 +84,5 @@ void ldpc_decoder_stream_impl::ldpc_decode(span<const ocudu::cuda::ldpc_decoder_
 
 std::unique_ptr<ldpc_decoder> ldpc_decoder::create(span<const base_graph_description> base_graph_descriptions)
 {
-  return std::make_unique<ldpc_decoder_stream_impl>(base_graph_descriptions);
+  return std::make_unique<ldpc_decoder_impl>(base_graph_descriptions);
 }

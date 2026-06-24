@@ -23,7 +23,8 @@ include/ocuda-fec/          Public headers (consumed by OCUDU core)
 
 lib/                        Source files
 ├── cuda_helpers/           CUDA kernels (.cu) and device helpers (device_*.h)
-│   ├── sch_decoder.cu          Main GPU kernel: rate dematch → LDPC iterations → hard decision
+│   ├── ldpc_decoder_impl.cu      Main GPU kernel: rate dematch → LDPC iterations → hard decision + decoder factory
+│   ├── ldpc_decoder_impl.h       ldpc_decoder_impl class declaration
 │   ├── ldpc_decoder_cuda_helpers.cu  cudaMalloc/memcpy/memset wrappers
 │   └── cuda_stream.cu          cudaStream_t lifecycle
 └── phy/upper/
