@@ -36,7 +36,7 @@ public:
       crcs1.crc24B = crc_factory->create(crc_generator_poly::CRC24B);
 
       codeblock_decoder = std::make_unique<pusch_codeblock_cuda_decoder>(
-          dematcher_factory->create(), std::make_unique<ldpc_decoder_cuda>(cuda_backend), crcs1);
+          dematcher_factory->create(), create_ldpc_decoder_cuda(cuda_backend), crcs1);
     }
 
     decoder_pool = std::make_unique<pusch_decoder_cuda_impl::codeblock_decoder_pool>(codeblock_decoders);
