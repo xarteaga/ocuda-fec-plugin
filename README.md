@@ -23,19 +23,24 @@ include/ocuda-fec/          Public headers (consumed by OCUDU core)
 
 lib/                        Source files
 ├── cuda_helpers/           CUDA kernels (.cu) and device helpers (device_*.h)
-│   ├── ldpc_decoder_impl.cu      Main GPU kernel: rate dematch → LDPC iterations → hard decision + decoder factory
-│   ├── ldpc_decoder_impl.h       ldpc_decoder_impl class declaration
+│   ├── ldpc_decoder_impl.cu          Main GPU kernel: rate dematch → LDPC iterations → hard decision + decoder factory
+│   ├── ldpc_decoder_impl.h           ldpc_decoder_impl class declaration
 │   ├── ldpc_decoder_cuda_helpers.cu  cudaMalloc/memcpy/memset wrappers
-│   └── cuda_stream.cu          cudaStream_t lifecycle
+│   ├── cuda_stream.cu                cudaStream_t lifecycle
+│   ├── device_ldpc_decoder.h         __device__ check-node / variable-node processing
+│   ├── device_ldpc_rate_dematcher.h  __device__ rate dematching
+│   └── device_math_helpers.h         __device__ soft-bit loading
 └── phy/upper/
-    ├── channel_coding/         LDPC decoder implementation
-    │   ├── ldpc_decoder_cuda_backend.cpp              Base graph upload to GPU
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp  128-stream pool, deferred decode + wait loop
-    │   └── ldpc_decoder_cuda_impl.cpp                 Per-codeblock: config, H2D queue, backend call
-    └── channel_processors/pusch/  PUSCH integration layer
-        ├── factories.cpp               Factory → creates pusch_decoder instances
+    ├── channel_coding/             LDPC decoder implementation
+    │   ├── ldpc_decoder_cuda_backend.cpp                   Base graph upload to GPU
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.h        cuda_ldpc_decoder_batch + async backend (128-stream pool)
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp      128-stream pool, deferred decode + wait loop
+    │   └── ldpc_decoder_cuda_impl.cpp                      Per-codeblock: config, H2D queue, backend call
+    └── channel_processors/pusch/     PUSCH integration layer
+        ├── factories.cpp                       Factory → creates pusch_decoder instances
         ├── pusch_codeblock_cuda_decoder.h/.cpp  Single codeblock: rate dematch + LDPC decode + CRC
-        └── pusch_decoder_cuda_impl.h/.cpp   Full PUSCH decoder: state machine, segment, dispatch, join
+        ├── pusch_decoder_cuda_impl.h/.cpp      Full PUSCH decoder: state machine, segment, dispatch, join
+        └── pusch_decoder_buffer_dummy.h        Dummy buffer for testing (no-op PUSCH decoder)
 ```
 
 Three static libraries are built:

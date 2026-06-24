@@ -19,4 +19,7 @@ endif (ENABLE_CUDA)
 
 if (ENABLE_CUDA AND CUDAToolkit_FOUND)
     add_subdirectory(lib)
+    if (BUILD_TESTING)
+        add_subdirectory(tests)
+    endif ()
 endif (ENABLE_CUDA AND CUDAToolkit_FOUND)
