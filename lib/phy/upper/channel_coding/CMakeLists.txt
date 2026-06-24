@@ -6,8 +6,8 @@ include_directories(${OCUDA_FEC_SOURCE_DIR}/include)
 list(APPEND ldpc_cuda_link_libraries ocuda_ldpc_decoder)
 
 add_library(ocudu_cuda_ldpc STATIC
-        ldpc_decoder_cuda.cpp
-        ldpc_decoder_cuda_backend.cpp)
+        ldpc_decoder_cuda_backend.cpp
+        ldpc_decoder_cuda_impl.cpp)
 
 target_include_directories(ocudu_cuda_ldpc PRIVATE ${CMAKE_SOURCE_DIR}/lib/phy/upper/channel_coding/ldpc/)
 
