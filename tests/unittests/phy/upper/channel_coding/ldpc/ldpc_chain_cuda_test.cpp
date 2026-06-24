@@ -162,7 +162,7 @@ protected:
   static std::shared_ptr<ldpc_segmenter_rx_factory> segmenter_rx_factory;
   static std::shared_ptr<ldpc_rate_matcher_factory> rate_matcher_factory;
 
-  task_worker                                worker{"cuda_backend_worker", 1024};
+  task_worker                                worker{"cuda_backend", 1024};
   task_worker_executor                       exec{worker};
   std::shared_ptr<cuda_ldpc_decoder_backend> backend;
   std::unique_ptr<ldpc_decoder_cuda>         decoder;
