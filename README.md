@@ -16,9 +16,25 @@ This plugin provides GPU-offloaded LDPC decoding for the 5G PUSCH (Physical Upli
 
 ```
 include/ocuda-fec/          Public headers (consumed by OCUDU core)
+├── cuda_helpers/           RAII CUDA streams, device memory, host-to-device promise, LDPC decoder interface
+└── phy/upper/channel_coding/
+    ├── ldpc_decoder_cuda.h   Per-codeblock decoder (config + decode)
+    └── ldpc_decoder_cuda_backend.h  Base class + create_asynchronous_backend() factory
+
 lib/                        Source files
-├── cuda_helpers/           CUDA device code (.cu) and device helpers (device_*.h)
-└── phy/                    C++ channel coding and processor implementations
+├── cuda_helpers/           CUDA kernels (.cu) and device helpers (device_*.h)
+│   ├── sch_decoder.cu          Main GPU kernel: rate dematch → LDPC iterations → hard decision
+│   ├── ldpc_decoder_cuda_helpers.cu  cudaMalloc/memcpy/memset wrappers
+│   └── cuda_stream.cu          cudaStream_t lifecycle
+└── phy/upper/
+    ├── channel_coding/         LDPC decoder implementation
+    │   ├── ldpc_decoder_cuda_backend.cpp              Base graph upload to GPU
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp  128-stream pool, deferred decode + wait loop
+    │   └── ldpc_decoder_cuda_impl.cpp                 Per-codeblock: config, H2D queue, backend call
+    └── channel_processors/pusch/  PUSCH integration layer
+        ├── factories.cpp               Factory → creates pusch_decoder instances
+        ├── pusch_codeblock_cuda_decoder.h/.cpp  Single codeblock: rate dematch + LDPC decode + CRC
+        └── pusch_decoder_cuda_impl.h/.cpp   Full PUSCH decoder: state machine, segment, dispatch, join
 ```
 
 Three static libraries are built:
@@ -26,7 +42,7 @@ Three static libraries are built:
 | Library | Purpose |
 |---------|---------|
 | `ocuda_ldpc_decoder` | Core CUDA kernels: stream management, H2D/D2H helpers, LDPC solver |
-| `ocudu_cuda_ldpc` | Base graph upload, batch pool, per-codeblock LDPC facade |
+| `ocudu_cuda_ldpc` | Base graph upload, async backend (128-stream pool), per-codeblock LDPC facade |
 | `ocuda_pusch_decoder` | PUSCH decoder integration (factory, codeblock dispatch, CRC) |
 
 ## Requirements

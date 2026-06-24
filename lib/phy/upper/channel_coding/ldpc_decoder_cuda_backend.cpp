@@ -3,6 +3,7 @@
 // Portions of this file may implement 3GPP specifications, which may be subject to additional licensing requirements.
 
 #include "ocuda-fec/phy/upper/channel_coding/ldpc_decoder_cuda_backend.h"
+#include "ldpc_decoder_cuda_asynchronous_backend.h"
 #include "ldpc_graph_impl.h"
 
 using namespace ocudu;
@@ -46,4 +47,9 @@ cuda_ldpc_decoder_backend::cuda_ldpc_decoder_backend()
 
   // Copy all LDPC base graph descriptions to the GPU.
   d_bg_info.copy_to_device(base_graph_descriptions);
+}
+
+std::shared_ptr<cuda_ldpc_decoder_backend> ocudu::create_asynchronous_backend(task_executor& executor)
+{
+  return std::make_shared<cuda_ldpc_decoder_asynchronous_backend>(executor);
 }
