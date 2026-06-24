@@ -44,20 +44,17 @@ public:
   /// \param[in] decoder_pool_ Codeblock decoder.
   /// \param[in] crc_set_      Structure with pointers to three CRC calculator objects, with generator
   ///                          polynomials of type \c CRC16, \c CRC24A and \c CRC24B.
-  /// \param[in] executor_     Task executor for asynchronous PUSCH code block decoding.
   /// \param[in] nof_prb       Number of PRBs.
   /// \param[in] nof_layers    Number of layers.
   pusch_decoder_cuda_impl(std::unique_ptr<ldpc_segmenter_rx>      segmenter_,
                           std::shared_ptr<codeblock_decoder_pool> decoder_pool_,
                           sch_crc                                 crc_set_,
-                          task_executor*                          executor_,
                           unsigned                                nof_prb,
                           unsigned                                nof_layers) :
     logger(ocudulog::fetch_basic_logger("PHY")),
     segmenter(std::move(segmenter_)),
     decoder_pool(std::move(decoder_pool_)),
     crc_set(std::move(crc_set_)),
-    executor(executor_),
     softbits_buffer(pusch_constants::get_max_codeword_size(nof_prb, nof_layers).value())
   {
     ocudu_assert(segmenter, "Invalid segmenter.");
@@ -135,9 +132,6 @@ private:
   /// Only the CRC calculator with generator polynomial crc_generator_poly::CRC24A, used for long transport blocks, is
   /// needed. Indeed, if a transport block is short enough not to be segmented, the CRC is verified by the decoder.
   sch_crc crc_set;
-  /// Optional task executor. Used for accelerating the PUSCH decoding at code block level. Set to \c nullptr for no
-  /// concurrent execution.
-  task_executor* executor;
   /// Soft bit buffer.
   std::vector<log_likelihood_ratio> softbits_buffer;
   /// Counts the number of soft bits in the buffer.

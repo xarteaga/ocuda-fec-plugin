@@ -19,6 +19,6 @@ endif ()
 add_library(ocuda_ldpc_decoder STATIC
         cuda_stream.cu
         ldpc_decoder_cuda_helpers.cu
-        ldpc_decoder.cu)
+        sch_decoder.cu)
 add_to_exported_libs(ocuda_ldpc_decoder)
 target_link_libraries(ocuda_ldpc_decoder PRIVATE CUDA::cudart)

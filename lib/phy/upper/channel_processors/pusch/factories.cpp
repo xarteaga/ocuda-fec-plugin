@@ -14,19 +14,18 @@ namespace {
 class pusch_decoder_factory_cuda : public pusch_decoder_factory
 {
 public:
-  explicit pusch_decoder_factory_cuda(pusch_decoder_factory_sw_configuration config) :
-    crc_factory(std::move(config.crc_factory)),
-    segmenter_factory(std::move(config.segmenter_factory)),
-    executor(config.executor),
+  explicit pusch_decoder_factory_cuda(const pusch_decoder_factory_plugin_configuration& config) :
+    crc_factory(create_crc_calculator_factory_sw("auto")),
+    segmenter_factory(create_ldpc_segmenter_rx_factory_sw()),
+    dematcher_factory(create_ldpc_rate_dematcher_factory_sw("auto")),
     nof_prb(config.nof_prb),
     nof_layers(config.nof_layers)
   {
     ocudu_assert(crc_factory, "Invalid CRC calculator factory.");
-    ocudu_assert(config.decoder_factory, "Invalid LDPC decoder factory.");
-    ocudu_assert(config.dematcher_factory, "Invalid LDPC dematcher factory.");
     ocudu_assert(segmenter_factory, "Invalid LDPC segmenter factory.");
+    ocudu_assert(dematcher_factory, "Invalid LDPC rate dematcher factory.");
 
-    cuda_backend = std::make_shared<cuda_ldpc_decoder_asynchronous_backend>(*executor);
+    cuda_backend = std::make_shared<cuda_ldpc_decoder_asynchronous_backend>(config.executor);
 
     std::vector<std::unique_ptr<pusch_codeblock_cuda_decoder>> codeblock_decoders(
         std::max(1U, config.nof_pusch_decoder_threads * MAX_NOF_SEGMENTS));
@@ -37,7 +36,7 @@ public:
       crcs1.crc24B = crc_factory->create(crc_generator_poly::CRC24B);
 
       codeblock_decoder = std::make_unique<pusch_codeblock_cuda_decoder>(
-          config.dematcher_factory->create(), std::make_unique<ldpc_decoder_cuda>(cuda_backend), crcs1);
+          dematcher_factory->create(), std::make_unique<ldpc_decoder_cuda>(cuda_backend), crcs1);
     }
 
     decoder_pool = std::make_unique<pusch_decoder_cuda_impl::codeblock_decoder_pool>(codeblock_decoders);
@@ -51,7 +50,7 @@ public:
     crcs.crc24B = crc_factory->create(crc_generator_poly::CRC24B);
 
     return std::make_unique<pusch_decoder_cuda_impl>(
-        segmenter_factory->create(), decoder_pool, std::move(crcs), executor, nof_prb, nof_layers);
+        segmenter_factory->create(), decoder_pool, std::move(crcs), nof_prb, nof_layers);
   }
 
 private:
@@ -59,7 +58,7 @@ private:
   std::shared_ptr<pusch_decoder_cuda_impl::codeblock_decoder_pool> decoder_pool;
   std::shared_ptr<crc_calculator_factory>                          crc_factory;
   std::shared_ptr<ldpc_segmenter_rx_factory>                       segmenter_factory;
-  task_executor*                                                   executor;
+  std::shared_ptr<ldpc_rate_dematcher_factory>                     dematcher_factory;
   unsigned                                                         nof_prb;
   unsigned                                                         nof_layers;
 };
@@ -67,7 +66,7 @@ private:
 } // namespace
 
 std::shared_ptr<pusch_decoder_factory>
-ocudu::create_pusch_decoder_factory_plugin(pusch_decoder_factory_sw_configuration config)
+ocudu::create_pusch_decoder_factory_plugin(const pusch_decoder_factory_plugin_configuration& config)
 {
-  return std::make_shared<pusch_decoder_factory_cuda>(std::move(config));
+  return std::make_shared<pusch_decoder_factory_cuda>(config);
 }

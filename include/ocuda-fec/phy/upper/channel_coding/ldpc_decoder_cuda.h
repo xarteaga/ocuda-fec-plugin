@@ -11,6 +11,7 @@
 #include "ldpc_graph_impl.h"
 #include "ocudu/adt/bit_buffer.h"
 #include "ocudu/phy/upper/log_likelihood_ratio.h"
+#include "ocudu/ran/sch/modulation_scheme.h"
 
 namespace ocudu {
 
@@ -32,6 +33,12 @@ public:
 
   /// Decoder configuration.
   struct configuration {
+    /// Modulation.
+    modulation_scheme modulation;
+    /// Redundancy version.
+    unsigned rv;
+    /// Set to true for resetting the rate matching buffer.
+    bool new_data;
     /// Code base graph.
     ldpc_base_graph_type base_graph = ldpc_base_graph_type::BG1;
     /// Code lifting size.
@@ -40,6 +47,10 @@ public:
     unsigned nof_filler_bits = 0;
     /// Maximum number of iterations.
     unsigned max_iterations = 6;
+    ///
+    unsigned block_length;
+    ///
+    unsigned Nref;
   };
 
   // See the ldpc_decoder interface for the documentation.
@@ -54,11 +65,17 @@ private:
   uint16_t nof_significant_bits = 44;
 
   /// Buffer to store the current value of the soft bits.
+  cuda::device_vector<int8_t, static_cast<size_t>(ldpc::MAX_BG_N_FULL* ldpc::MAX_LIFTING_SIZE)> d_input;
+
+  /// Buffer to store the current value of the soft bits.
   cuda::device_vector<int8_t, static_cast<size_t>(ldpc::MAX_BG_N_FULL* ldpc::MAX_LIFTING_SIZE)> d_soft_bits;
 
   /// Buffer to store the current value of the check-to-variable messages.
   cuda::device_vector<int8_t, static_cast<size_t>(MAX_CHECK_NODE_DEGREE* ldpc::MAX_LIFTING_SIZE* ldpc::MAX_BG_M)>
       d_check_to_var;
+
+  /// Temporal rate matching buffer.
+  cuda::device_vector<int8_t, static_cast<size_t>(ldpc::MAX_BG_N_FULL* ldpc::MAX_LIFTING_SIZE)> d_rm_buffer;
 };
 
 } // namespace ocudu

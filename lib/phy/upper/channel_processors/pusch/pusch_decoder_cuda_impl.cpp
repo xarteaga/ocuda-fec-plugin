@@ -334,7 +334,6 @@ void pusch_decoder_cuda_impl::fork_codeblock_task(unsigned cb_id)
       pusch_codeblock_cuda_decoder& decoder = *decoder_ptr;
       on_use_decoders[cb_id]                = std::move(decoder_ptr);
       decoder.decode(message,
-                     rm_buffer,
                      cb_llrs,
                      current_config.new_data,
                      block_crc->get_generator_poly(),
@@ -364,16 +363,7 @@ void pusch_decoder_cuda_impl::fork_codeblock_task(unsigned cb_id)
     }
   };
 
-  // Execute task asynchronously if an executor is available and the number of codeblocks is larger than one.
-  bool enqueued = false;
-  if ((executor != nullptr) && (nof_codeblocks > 1)) {
-    enqueued = executor->defer(cb_process_task);
-  }
-
-  // Process task synchronously if is not successfully enqueued.
-  if (!enqueued) {
-    cb_process_task();
-  }
+  cb_process_task();
 }
 
 void pusch_decoder_cuda_impl::join_and_notify()
@@ -436,7 +426,7 @@ void pusch_decoder_cuda_impl::join_and_notify()
                to_string(internal_states::decoded),
                to_string(previous_state));
 
-  // Finally report decoding result.
+  // Finally, report decoding result.
   result_notifier->on_sch_data(stats);
 }
 
