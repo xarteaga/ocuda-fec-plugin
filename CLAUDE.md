@@ -25,7 +25,7 @@ Key CMake variables:
 | Library | Sources | Links |
 |---------|---------|-------|
 | `ocuda_ldpc_decoder` | `cuda_stream.cu`, `ldpc_decoder_cuda_helpers.cu`, `sch_decoder.cu` | `CUDA::cudart` |
-| `ocudu_cuda_ldpc` | `ldpc_decoder_cuda.cpp`, `ldpc_decoder_cuda_backend.cpp` | `ocuda_ldpc_decoder`, `ocudu_ldpc` |
+| `ocudu_cuda_ldpc` | `ldpc_decoder_cuda_backend.cpp`, `ldpc_decoder_cuda_asynchronous_backend.cpp`, `ldpc_decoder_cuda_impl.cpp` | `ocuda_ldpc_decoder`, `ocudu_ldpc` |
 | `ocuda_pusch_decoder` | `factories.cpp`, `pusch_codeblock_cuda_decoder.cpp`, `pusch_decoder_cuda_impl.cpp` | `ocudu_upper_phy_support`, `ocudu_ran` |
 
 ## Code Architecture
@@ -43,7 +43,7 @@ include/ocuda-fec/                      Public headers (consumed by OCUDU core)
 │   └── host_to_device_promise.h        Deferred async H2D transfer (RAII promise)
 └── phy/upper/channel_coding/
     ├── ldpc_decoder_cuda.h             Per-codeblock decoder (config + decode)
-    └── ldpc_decoder_cuda_backend.h     Base graph upload, batch pool, async backend
+    └── ldpc_decoder_cuda_backend.h     Base class + create_asynchronous_backend() factory
 
 lib/
 ├── cuda_helpers/                       CUDA device code (.cu)
@@ -56,8 +56,10 @@ lib/
 │   └── device_math_helpers.h           __device__ soft-bit loading (soft-bit loading moved here from sch_decoder.cu)
 └── phy/upper/
     ├── channel_coding/
-    │   ├── ldpc_decoder_cuda_backend.cpp  Precomputes & uploads LDPC base graph adjacency to GPU
-    │   └── ldpc_decoder_cuda.cpp            Per-codeblock: config, H2D queue, backend call
+    │   ├── ldpc_decoder_cuda_backend.cpp              Precomputes & uploads LDPC base graph adjacency to GPU
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.h  cuda_ldpc_decoder_batch + async backend (128-stream pool)
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp  128-stream pool, deferred decode + wait loop
+    │   └── ldpc_decoder_cuda_impl.cpp                 Per-codeblock: config, H2D queue, backend call
     └── channel_processors/pusch/          PUSCH integration layer
         ├── factories.cpp                    Factory → creates pusch_decoder instances
         ├── pusch_codeblock_cuda_decoder.h/.cpp  Single codeblock: rate dematch + LDPC decode + CRC
@@ -87,9 +89,9 @@ softbits → pusch_decoder_cuda_impl (state machine)
 
 | Type | Purpose |
 |------|---------|
-| `cuda_ldpc_decoder_backend` | Base class: owns base graph descriptions on device, pure-virtual `decode()` |
-| `cuda_ldpc_decoder_asynchronous_backend` | Pool of 128 CUDA streams, deferred decode + wait loop |
-| `cuda_ldpc_decoder_batch` | Batches up to 32 codeblocks per stream, enqueues, checks completion |
+| `cuda_ldpc_decoder_backend` | Base class: owns base graph descriptions on device, pure-virtual `decode()`, exposes `create_asynchronous_backend()` factory |
+| `cuda_ldpc_decoder_asynchronous_backend` | Pool of 128 CUDA streams, deferred decode + wait loop (moved to local header `lib/.../ldpc_decoder_cuda_asynchronous_backend.h`) |
+| `cuda_ldpc_decoder_batch` | Internal: batches up to 32 codeblocks per stream, enqueues, checks completion (moved to local header) |
 | `ldpc_decoder_cuda` | Per-codeblock facade: computes LDPC config, queues H2D, calls backend |
 | `ldpc_decoder` (cuda namespace) | Abstract batch decoder interface; implemented by `ldpc_decoder_stream_impl` |
 | `pusch_codeblock_cuda_decoder` | Wraps rate dematcher + decoder + CRC for one codeblock |
@@ -98,7 +100,7 @@ softbits → pusch_decoder_cuda_impl (state machine)
 
 ### Concurrency Model
 
-- `cuda_ldpc_decoder_asynchronous_backend` uses a pool of 128 CUDA streams protected by `backend_mutex`
+- `cuda_ldpc_decoder_asynchronous_backend` uses a pool of 128 CUDA streams protected by `backend_mutex` — created via `create_asynchronous_backend(task_executor&)` factory
 - Codeblocks are dispatched to streams; when a stream's batch fills (max 32), it dequeues and runs
 - A polling loop (`timed_decode`) waits for an idle stream
 - Completion callbacks (`check_and_complete`) are deferred back to the `task_executor`

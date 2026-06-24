@@ -6,7 +6,6 @@
 #include "pusch_codeblock_cuda_decoder.h"
 #include "pusch_decoder_cuda_impl.h"
 #include "ocudu/phy/upper/channel_processors/pusch/pusch_processor_result_notifier.h"
-
 using namespace ocudu;
 
 namespace {
@@ -25,7 +24,7 @@ public:
     ocudu_assert(segmenter_factory, "Invalid LDPC segmenter factory.");
     ocudu_assert(dematcher_factory, "Invalid LDPC rate dematcher factory.");
 
-    cuda_backend = std::make_shared<cuda_ldpc_decoder_asynchronous_backend>(config.executor);
+    cuda_backend = create_asynchronous_backend(config.executor);
 
     std::vector<std::unique_ptr<pusch_codeblock_cuda_decoder>> codeblock_decoders(
         std::max(1U, config.nof_pusch_decoder_threads * MAX_NOF_SEGMENTS));
