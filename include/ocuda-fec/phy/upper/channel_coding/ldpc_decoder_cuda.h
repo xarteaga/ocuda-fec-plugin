@@ -4,6 +4,10 @@
 
 /// \file
 /// \brief LDPC decoder interface - CUDA backend.
+///
+/// Combines the functionality of \c ldpc_rate_dematcher (rate dematching and HARQ
+/// soft combining) and \c ldpc_decoder (iterative LDPC message-passing decoding and
+/// CRC verification) into a single GPU-accelerated per-codeblock decoding step.
 
 #pragma once
 
@@ -19,40 +23,50 @@ namespace ocudu {
 
 class cuda_ldpc_decoder_backend;
 
-/// LDPC decoder interface - CUDA backend.
+/// \brief LDPC decoder interface - CUDA backend.
+///
+/// Encapsulates the full per-codeblock LDPC decoding chain on GPU: rate dematching (reversing the rate matching
+/// performed by \c ldpc_rate_matcher and performing HARQ chase combining or incremental redundancy), soft-bit loading,
+/// iterative LDPC belief-propagation decoding, hard decision, and CRC verification.
 class ldpc_decoder_cuda
 {
 public:
+  /// Default virtual destructor.
   virtual ~ldpc_decoder_cuda() = default;
 
   /// Decoder configuration.
   struct configuration {
-    /// Modulation.
+    /// Modulation scheme used for soft-bit loading.
     modulation_scheme modulation;
-    /// Redundancy version.
+    /// Redundancy version — selects which rate-matched chunks are retained.
     unsigned rv;
-    /// Set to true for resetting the rate matching buffer.
+    /// Set to \c true to reset the rate matching buffer (new transmission); set to \c false to accumulate with prior
+    /// transmissions (HARQ combining).
     bool new_data;
-    /// Code base graph.
+    /// Code base graph (BG1 or BG2).
     ldpc_base_graph_type base_graph = ldpc_base_graph_type::BG1;
     /// Code lifting size.
     ldpc::lifting_size_t lifting_size = ldpc::LS2;
     /// Number of filler bits in the full codeblock.
     unsigned nof_filler_bits = 0;
-    /// Maximum number of iterations.
+    /// Maximum number of LDPC belief-propagation iterations.
     unsigned max_iterations = 6;
-    ///
+    /// Encoded codeblock length in bits (after rate matching).
     unsigned block_length;
-    ///
+    /// Number of bits in the reference codeblock (i.e. number of rows in the parity-check matrix H).
     unsigned Nref;
   };
 
-  /// \brief Decode a single code block.
+  /// \brief Decode a single code block on the GPU.
   ///
-  /// \param[out] output   Bit buffer for the decoded code block.
-  /// \param[in]  input    LLRs for the code block.
-  /// \param[in]  cfg      LDPC decoder configuration.
-  /// \param[in]  callback Completion callback.
+  /// Executes the full decoding chain asynchronously on the GPU: rate dematching (reversing rate matching and
+  /// performing HARQ chase combining or incremental redundancy) → soft-bit loading → iterative LDPC message-passing →
+  /// hard decision → CRC verification.
+  ///
+  /// \param[out] output   Bit buffer for the decoded code block (information bits).
+  /// \param[in]  input    LLRs for the rate-matched code block.
+  /// \param[in]  cfg      LDPC decoder configuration (modulation, RV, base graph, etc.).
+  /// \param[in]  callback Completion callback invoked when decoding finishes.
   virtual void decode(bit_buffer&                       output,
                       span<const log_likelihood_ratio>  input,
                       const configuration&              cfg,
