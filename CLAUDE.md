@@ -25,7 +25,7 @@ Key CMake variables:
 | Library | Sources | Links |
 |---------|---------|-------|
 | `ocuda_ldpc_decoder` | `cuda_stream.cu`, `ldpc_decoder_cuda_helpers.cu`, `ldpc_decoder_impl.cu` | `CUDA::cudart` |
-| `ocudu_cuda_ldpc` | `ldpc_decoder_cuda_backend.cpp`, `ldpc_decoder_cuda_asynchronous_backend.cpp`, `ldpc_decoder_cuda_impl.cpp` | `ocuda_ldpc_decoder`, `ocudu_ldpc` |
+| `ocudu_cuda_ldpc` | `ldpc_decoder_cuda_backend.cpp`, `ldpc_decoder_cuda_asynchronous_backend.cpp`, `ldpc_decoder_cuda_impl.cpp` | `ocuda_ldpc_decoder` |
 | `ocuda_pusch_decoder` | `factories.cpp`, `pusch_codeblock_cuda_decoder.cpp`, `pusch_decoder_cuda_impl.cpp` | `ocudu_upper_phy_support`, `ocudu_ran` |
 
 ## Code Architecture
@@ -47,25 +47,25 @@ include/ocuda-fec/                      Public headers (consumed by OCUDU core)
 
 lib/
 ├── cuda_helpers/                       CUDA device code (.cu) and device helpers (device_*.h)
-│   ├── ldpc_decoder_impl.cu        Main GPU kernel: cuda_sch_decode + ldpc_decoder::create factory
-│   │                             → rate dematch → load soft bits → LDPC iterations → hard decision
-│   ├── ldpc_decoder_impl.h         ldpc_decoder_impl class declaration
-│   ├── ldpc_decoder_cuda_helpers.cu    cudaMalloc/memcpy/memset wrappers
-│   ├── cuda_stream.cu                  cudaStream_t lifecycle
-│   ├── device_ldpc_decoder.h           __device__ check-node / variable-node processing
-│   ├── device_ldpc_rate_dematcher.h    __device__ rate dematching
-│   └── device_math_helpers.h           __device__ soft-bit loading
+│   ├── ldpc_decoder_impl.cu              Main GPU kernel: ldpc_decoder::create factory
+│   │                                   → rate dematch → load soft bits → LDPC iterations → hard decision
+│   ├── ldpc_decoder_impl.h               ldpc_decoder_impl class declaration
+│   ├── ldpc_decoder_cuda_helpers.cu      cudaMalloc/memcpy/memset wrappers
+│   ├── cuda_stream.cu                    cudaStream_t lifecycle
+│   ├── device_ldpc_decoder.h             __device__ check-node / variable-node processing
+│   ├── device_ldpc_rate_dematcher.h      __device__ rate dematching
+│   └── device_math_helpers.h             __device__ soft-bit loading
 └── phy/upper/
-    ├── channel_coding/
-    │   ├── ldpc_decoder_cuda_backend.cpp              Precomputes & uploads LDPC base graph adjacency to GPU
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.h  cuda_ldpc_decoder_batch + async backend (128-stream pool)
+    ├── channel_coding/                     LDPC decoder implementation
+    │   ├── ldpc_decoder_cuda_backend.cpp               Base graph upload to GPU
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.h    cuda_ldpc_decoder_batch + async backend (128-stream pool)
     │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp  128-stream pool, deferred decode + wait loop
-    │   └── ldpc_decoder_cuda_impl.cpp                 Per-codeblock: config, H2D queue, backend call
-    └── channel_processors/pusch/          PUSCH integration layer
-        ├── factories.cpp                    Factory → creates pusch_decoder instances
-        ├── pusch_codeblock_cuda_decoder.h/.cpp  Single codeblock: rate dematch + LDPC decode + CRC
-        ├── pusch_decoder_buffer_dummy.h     Dummy buffer for testing (no-op PUSCH decoder)
-        └── pusch_decoder_cuda_impl.h/.cpp   Full PUSCH decoder: state machine, segment, dispatch, join
+    │   └── ldpc_decoder_cuda_impl.cpp                  Per-codeblock: config, H2D queue, backend call
+    └── channel_processors/pusch/                   PUSCH integration layer
+        ├── factories.cpp                           Factory → creates pusch_decoder instances
+        ├── pusch_codeblock_cuda_decoder.h/.cpp     Single codeblock: rate dematch + LDPC decode + CRC
+        ├── pusch_decoder_buffer_dummy.h            Dummy buffer for testing (no-op PUSCH decoder)
+        └── pusch_decoder_cuda_impl.h/.cpp          Full PUSCH decoder: state machine, segment, dispatch, join
 ```
 
 ### Data Flow (PUSCH decode)
