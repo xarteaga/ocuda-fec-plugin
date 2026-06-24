@@ -3,7 +3,6 @@
 // Portions of this file may implement 3GPP specifications, which may be subject to additional licensing requirements.
 
 #include "pusch_decoder_cuda_impl.h"
-#include "ocudu/instrumentation/traces/du_traces.h"
 #include "ocudu/ocuduvec/bit.h"
 #include "ocudu/ocuduvec/copy.h"
 #include "ocudu/ocuduvec/zero.h"

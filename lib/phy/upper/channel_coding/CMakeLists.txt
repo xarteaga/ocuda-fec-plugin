@@ -11,9 +11,7 @@ add_library(ocudu_cuda_ldpc STATIC
         ldpc_decoder_cuda_impl.cpp)
 
 target_include_directories(ocudu_cuda_ldpc PRIVATE ${CMAKE_SOURCE_DIR}/lib/phy/upper/channel_coding/ldpc/)
-
-target_link_libraries(ocudu_cuda_ldpc ocuda_ldpc_decoder)
-target_compile_definitions(ocudu_cuda_ldpc PUBLIC ${ldpc_definitions})
+target_link_libraries(ocudu_cuda_ldpc ocuda_ldpc_decoder ocuda_cuda_traces)
 
 target_link_libraries(ocudu_ldpc ocudu_cuda_ldpc)
 target_compile_definitions(ocudu_ldpc PUBLIC HAVE_LDPC_DECODER_PLUGIN)

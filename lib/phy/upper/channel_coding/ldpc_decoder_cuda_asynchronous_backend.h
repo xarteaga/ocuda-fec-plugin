@@ -3,6 +3,7 @@
 // Portions of this file may implement 3GPP specifications, which may be subject to additional licensing requirements.
 #pragma once
 
+#include "ocuda-fec/instrumentation/traces/l1_cuda_traces.h"
 #include "ocuda-fec/phy/upper/channel_coding/ldpc_decoder_cuda_backend.h"
 #include "ocudu/support/executors/task_worker.h"
 #include "ocudu/support/memory_pool/bounded_object_pool.h"
@@ -39,28 +40,58 @@ public:
     return codeblocks.full();
   }
 
-  void sequential_decode()
+  void load_input()
   {
+    const auto input_tp = l1_cuda_tracer.now();
+
     // Transfer input codeblocks from the host to the device.
     for (auto& input_promise : input_promises) {
       input_promise.transfer(stream);
     }
+    l1_cuda_tracer << trace_event{"ldpc_decode_cuda_input", input_tp};
+  }
+
+  bool launch_decode_kernel()
+  {
+    if (!stream.is_idle()) {
+      return false;
+    }
+
+    const auto ldpc_decode_tp = l1_cuda_tracer.now();
 
     // Request asynchronous decode.
     decoder->ldpc_decode(codeblocks, stream);
 
+    l1_cuda_tracer << trace_event{"ldpc_decode_cuda_decode", ldpc_decode_tp};
+
+    return true;
+  }
+
+  bool unload_output()
+  {
+    if (!stream.is_idle()) {
+      return false;
+    }
+
+    const auto output_tp = l1_cuda_tracer.now();
+
     // Transfer output bits from the device to the host.
     h_common_output.resize(d_common_output.size());
     cuda::copy_device_to_host(span<uint8_t>(h_common_output), d_common_output.get_const(), stream);
-  }
 
-  void synchronize() { stream.synchronize(); }
+    l1_cuda_tracer << trace_event{"ldpc_decode_cuda_output", output_tp};
+
+    return true;
+  }
 
   bool check_and_complete()
   {
     if (!stream.is_idle()) {
       return false;
     }
+
+    // Trace completion of the asynchronous task and create trace point for the completion.
+    const auto complete_tp = l1_cuda_tracer.now();
 
     // For each codeblock invoke the callback.
     span<const uint8_t> h_output(h_common_output);
@@ -80,6 +111,9 @@ public:
     input_promises.clear();
     codeblocks.clear();
     callbacks.clear();
+
+    // Trace completion task.
+    l1_cuda_tracer << trace_event{"ldpc_decode_cuda_complete", complete_tp};
 
     return true;
   }
@@ -109,7 +143,9 @@ private:
   using cuda_ldpc_decoder_batch_pool = bounded_object_pool<cuda_ldpc_decoder_batch>;
 
   void timed_decode(unsigned count, std::chrono::system_clock::time_point timeout_time);
+  void wait_input_load(cuda_ldpc_decoder_batch_pool::ptr decoder);
   void wait_decode_complete(cuda_ldpc_decoder_batch_pool::ptr decoder);
+  void wait_output_complete(cuda_ldpc_decoder_batch_pool::ptr decoder);
 
   static constexpr unsigned nof_streams = 128;
 

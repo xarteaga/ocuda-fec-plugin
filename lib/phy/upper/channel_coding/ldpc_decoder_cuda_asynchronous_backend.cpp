@@ -35,13 +35,14 @@ void cuda_ldpc_decoder_asynchronous_backend::decode(span<uint8_t>               
 
     // Push the codeblock to the batch decoder.
     if (current_decoder->push_back(output, input_promise, codeblock, std::move(callback))) {
+      l1_cuda_tracer << instant_trace_event{"ldpc_dispatch", instant_trace_event::cpu_scope::thread};
       local_decoder = std::move(current_decoder);
     }
   }
 
   if (local_decoder) {
-    local_decoder->sequential_decode();
-    wait_decode_complete(std::move(local_decoder));
+    local_decoder->load_input();
+    wait_input_load(std::move(local_decoder));
   } else {
     timed_decode(current_codeblock_count, std::chrono::system_clock::now() + std::chrono::microseconds(10));
   }
@@ -70,9 +71,26 @@ void cuda_ldpc_decoder_asynchronous_backend::timed_decode(unsigned              
   }
 
   if (local_decoder) {
-    local_decoder->sequential_decode();
-    wait_decode_complete(std::move(local_decoder));
+    local_decoder->load_input();
+    wait_input_load(std::move(local_decoder));
   }
+}
+
+void cuda_ldpc_decoder_asynchronous_backend::wait_input_load(cuda_ldpc_decoder_batch_pool::ptr decoder)
+{
+  if (!decoder) {
+    return;
+  }
+
+  report_error_if_not(executor.defer([this, local_decoder = std::move(decoder)]() mutable {
+    if (local_decoder->launch_decode_kernel()) {
+      wait_decode_complete(std::move(local_decoder));
+      return;
+    }
+
+    wait_input_load(std::move(local_decoder));
+  }),
+                      "Error deferring CUDA decoder wait asynchronous task.");
 }
 
 void cuda_ldpc_decoder_asynchronous_backend::wait_decode_complete(cuda_ldpc_decoder_batch_pool::ptr decoder)
@@ -81,12 +99,29 @@ void cuda_ldpc_decoder_asynchronous_backend::wait_decode_complete(cuda_ldpc_deco
     return;
   }
 
-  report_error_if_not(executor.defer([this, decoder = std::move(decoder)]() mutable {
-    if (decoder->check_and_complete()) {
+  report_error_if_not(executor.defer([this, local_decoder = std::move(decoder)]() mutable {
+    if (local_decoder->unload_output()) {
+      wait_output_complete(std::move(local_decoder));
       return;
     }
 
-    wait_decode_complete(std::move(decoder));
+    wait_decode_complete(std::move(local_decoder));
+  }),
+                      "Error deferring CUDA decoder wait asynchronous task.");
+}
+
+void cuda_ldpc_decoder_asynchronous_backend::wait_output_complete(cuda_ldpc_decoder_batch_pool::ptr decoder)
+{
+  if (!decoder) {
+    return;
+  }
+
+  report_error_if_not(executor.defer([this, local_decoder = std::move(decoder)]() mutable {
+    if (local_decoder->check_and_complete()) {
+      return;
+    }
+
+    wait_output_complete(std::move(local_decoder));
   }),
                       "Error deferring CUDA decoder wait asynchronous task.");
 }
