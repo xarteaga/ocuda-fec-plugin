@@ -4,6 +4,8 @@
 
 #include "ldpc_decoder_cuda_asynchronous_backend.h"
 #include "ldpc_graph_impl.h"
+#include <utility>
+
 #include "ocudu/support/executors/task_worker.h"
 
 using namespace ocudu;
@@ -36,7 +38,7 @@ void cuda_ldpc_decoder_asynchronous_backend::decode(span<uint8_t>               
     // Push the codeblock to the batch decoder.
     if (current_decoder->push_back(output, input_promise, codeblock, std::move(callback))) {
       l1_cuda_tracer << instant_trace_event{"ldpc_dispatch", instant_trace_event::cpu_scope::thread};
-      local_decoder = std::move(current_decoder);
+      local_decoder = std::exchange(current_decoder, nullptr);
     }
   }
 
@@ -68,7 +70,7 @@ void cuda_ldpc_decoder_asynchronous_backend::timed_decode(unsigned              
     }
 
     l1_cuda_tracer << instant_trace_event{"ldpc_dispatch_timeout", instant_trace_event::cpu_scope::thread};
-    local_decoder = std::move(current_decoder);
+    local_decoder = std::exchange(current_decoder, nullptr);
   }
 
   if (local_decoder) {
