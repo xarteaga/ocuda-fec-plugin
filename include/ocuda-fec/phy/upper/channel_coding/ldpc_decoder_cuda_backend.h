@@ -50,7 +50,7 @@ public:
                       cuda::host_to_device_promise<int8_t>       input_promise,
                       const cuda::ldpc_decoder_cb_configuration& codeblock,
                       cuda_ldpc_decoder_callback_func&&          callback,
-                      bool                                       last_codeblock = false) = 0;
+                      bool                                       last_codeblock = true) = 0;
 
 protected:
   /// Base graph descriptions for each lifting size and base graph.

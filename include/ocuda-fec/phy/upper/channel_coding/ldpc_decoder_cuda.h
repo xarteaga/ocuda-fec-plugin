@@ -73,7 +73,7 @@ public:
                       span<const log_likelihood_ratio>  input,
                       const configuration&              cfg,
                       cuda_ldpc_decoder_callback_func&& callback,
-                      bool                              last_codeblock = false) = 0;
+                      bool                              last_codeblock = true) = 0;
 };
 
 /// \brief Create an LDPC decoder for a CUDA backend.
