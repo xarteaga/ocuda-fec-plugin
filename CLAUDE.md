@@ -112,7 +112,7 @@ softbits → pusch_decoder_cuda_impl (state machine)
 
 - `cuda_ldpc_decoder_asynchronous_backend` uses a pool of 128 CUDA streams protected by `backend_mutex` — created via `create_asynchronous_backend(task_executor&)` factory
 - Each batch (`cuda_ldpc_decoder_batch`) owns a `task_executor&` and a single `cuda_stream`. Pipeline phases are chained via CUDA stream callbacks instead of executor-thread polling:
-  1. `load_input()` — H2D transfers on the stream, then `set_callback_next_complete()` fires the next phase when idle.
+  1. `start_asynch_decoding()` — H2D transfers on the stream, then `set_callback_next_complete()` fires the next phase when idle.
   2. `launch_decode_kernel()` — defers the kernel launch to the executor, then arms a stream callback that fires `unload_output()`.
   3. `unload_output()` — defers D2H transfer, then arms a callback that fires `complete()`.
   4. `complete()` — defers per-codeblock result copying and callback invocation, then fires the external completion callback.
