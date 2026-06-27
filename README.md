@@ -27,13 +27,13 @@ include/ocuda-fec/          Public headers (consumed by OCUDU core)
 
 lib/                        Source files
 ├── cuda_helpers/           CUDA kernels (.cu) and device helpers (device_*.h)
-│   ├── ldpc_decoder_impl.cu          Main GPU kernel: rate dematch → LDPC iterations → hard decision + decoder factory
+│   ├── ldpc_decoder_impl.cu          GPU kernel: rate dematch → LDPC iterations → hard decision + decoder factory
 │   ├── ldpc_decoder_impl.h           ldpc_decoder_impl class declaration
 │   ├── ldpc_decoder_cuda_helpers.cu  cudaMalloc/memcpy/memset wrappers
-│   ├── cuda_stream.cu                cudaStream_t lifecycle
-│   ├── device_ldpc_decoder.h         __device__ check-node / variable-node processing
+│   ├── cuda_stream.cu                cudaStream_t lifecycle + stream completion callback
+│   ├── device_ldpc_decoder.h         __device__ check-node / variable-node / hard-bit processing
 │   ├── device_ldpc_rate_dematcher.h  __device__ rate dematching
-│   └── device_math_helpers.h         __device__ soft-bit loading
+│   └── device_math_helpers.h         __device__ LLR sum / soft-bit loading helpers
 ├── instrumentation/            CUDA tracing support
 │   └── traces/
 │       └── l1_cuda_traces.cpp  L1 event tracer definition
@@ -45,7 +45,7 @@ lib/                        Source files
     │   └── ldpc_decoder_cuda_impl.cpp                      Per-codeblock: config, H2D queue, backend call
     └── channel_processors/pusch/     PUSCH integration layer
         ├── factories.cpp                       Factory → creates pusch_decoder instances
-        ├── pusch_codeblock_cuda_decoder.h/.cpp  Single codeblock: rate dematch + LDPC decode + CRC
+        ├── pusch_codeblock_cuda_decoder.h/.cpp  Single codeblock: GPU LDPC decode (rate dematch in kernel) + CRC
         ├── pusch_decoder_cuda_impl.h/.cpp      Full PUSCH decoder: state machine, segment, dispatch, join
         └── pusch_decoder_buffer_dummy.h        Dummy buffer for testing (no-op PUSCH decoder)
 ```
@@ -54,7 +54,7 @@ Four static libraries are built:
 
 | Library | Purpose |
 |---------|---------|
-| `ocuda_ldpc_decoder` | Core CUDA kernels: stream management, H2D/D2H helpers, LDPC solver |
+| `ocuda_ldpc_decoder` | CUDA kernels: stream lifecycle + completion callback, H2D/D2H helpers, GPU LDPC kernel + factory |
 | `ocuda_cuda_traces` | L1-level CUDA event tracing for latency analysis |
 | `ocudu_cuda_ldpc` | Base graph upload, async backend (128-stream pool), per-codeblock LDPC facade |
 | `ocuda_pusch_decoder` | PUSCH decoder integration (factory, codeblock dispatch, CRC) |

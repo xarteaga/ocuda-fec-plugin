@@ -97,6 +97,7 @@ public:
   /// \param[in] crc_poly            CRC polynomial used for the code block.
   /// \param[in] nof_ldpc_iterations Number of LDPC decoder iterations.
   /// \param[in] metadata            Code block metadata.
+  /// \param[in] last_codeblock      Set to true when this is the last codeblock of the reception.
   /// \return The number of iterations if the CRC matches after the LDPC decoder. Otherwise, \c std::nullopt.
   void decode(bit_buffer                                   cb_data,
               span<const log_likelihood_ratio>             cb_llrs,
@@ -104,7 +105,8 @@ public:
               crc_generator_poly                           crc_poly,
               unsigned                                     nof_ldpc_iterations,
               const codeblock_metadata&                    metadata,
-              pusch_codeblock_cuda_decoder_callback_func&& callback_);
+              pusch_codeblock_cuda_decoder_callback_func&& callback_,
+              bool                                         last_codeblock = false);
 
 private:
   /// Pointer to an LDPC rate-dematcher.

@@ -21,8 +21,8 @@ using cuda_ldpc_decoder_callback_func = unique_function<void(), default_unique_f
 
 /// \brief Base class for CUDA LDPC decoder backends.
 ///
-/// Manages LDPC base graph descriptions stored on the GPU and provides the pure-virtual decode interface. Derived
-/// classes implement the actual GPU decoding execution model.
+/// Manages LDPC base graph descriptions stored on the GPU and provides the virtual decode interface. Derived classes
+/// implement the actual GPU decoding execution model.
 class cuda_ldpc_decoder_backend
 {
 public:
@@ -44,10 +44,13 @@ public:
   /// \param[in]  input_promise     Deferred host-to-device transfer for LLR input.
   /// \param[in]  codeblock         Codeblock configuration.
   /// \param[in]  callback          Completion callback invoked when decoding finishes.
+  /// \param[in]  last_codeblock    Set to \c true when this is the last codeblock of the reception, triggering
+  ///                               immediate synchronous dispatch of any pending batch.
   virtual void decode(span<uint8_t>                              output,
                       cuda::host_to_device_promise<int8_t>       input_promise,
                       const cuda::ldpc_decoder_cb_configuration& codeblock,
-                      cuda_ldpc_decoder_callback_func&&          callback) = 0;
+                      cuda_ldpc_decoder_callback_func&&          callback,
+                      bool                                       last_codeblock = false) = 0;
 
 protected:
   /// Base graph descriptions for each lifting size and base graph.

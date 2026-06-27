@@ -7,12 +7,23 @@
 #include "ocuda-fec/phy/upper/channel_coding/ldpc_decoder_cuda_backend.h"
 #include "ocudu/support/executors/task_worker.h"
 #include "ocudu/support/memory_pool/bounded_object_pool.h"
-#include <atomic>
-#include <chrono>
 #include <mutex>
 
 namespace ocudu {
 
+/// \brief A single batch of codeblocks processed on one CUDA stream.
+///
+/// Holds up to \c max_nof_codeblocks (32) codeblocks and drives a four-phase callback-chained pipeline on a single
+/// CUDA stream. No CPU thread is held waiting for the GPU — each phase defers device-accessing work to the executor
+/// thread pool and arms a CUDA stream callback to trigger the next phase when the stream is idle:
+///
+/// 1. \c start_asynch_decoding — transfers LLR inputs (H2D) via deferred promises, then arms \c launch_decode_kernel.
+/// 2. \c launch_decode_kernel — defers the \c ldpc_decode kernel launch, then arms \c unload_output.
+/// 3. \c unload_output — defers the D2H output transfer, then arms \c complete.
+/// 4. \c complete — defers per-codeblock result copying and callback invocation, then fires the external completion.
+///
+/// The batch is obtained from and returned to a \c bounded_object_pool via a smart-pointer token captured in the
+/// final completion callback (the \c dispatch_batch token pattern).
 class cuda_ldpc_decoder_batch
 {
 public:
@@ -141,29 +152,50 @@ private:
   unique_task                                                                                     callback;
 };
 
+/// \brief Asynchronous CUDA LDPC decoder backend.
+///
+/// Manages a pool of 128 CUDA streams, each backed by its own batch decoder. Codeblocks are distributed across the
+/// pool: the first call allocates a batch, subsequent calls append to the current batch. When a batch fills (32
+/// codeblocks) or the \c last_codeblock flag is set, the batch is immediately dispatched — no timeout fallback.
+///
+/// Dispatching starts a callback-chained pipeline on the batch's stream (see \c cuda_ldpc_decoder_batch for details).
+/// The CPU never polls the GPU; completion is signalled entirely from CUDA stream callbacks that fire from the
+/// runtime when each stream is idle.
 class cuda_ldpc_decoder_asynchronous_backend : public cuda_ldpc_decoder_backend
 {
 public:
   explicit cuda_ldpc_decoder_asynchronous_backend(task_executor& executor_);
 
+  // See the interface cuda_ldpc_decoder_backend for documentation.
   void decode(span<uint8_t>                              output,
               cuda::host_to_device_promise<int8_t>       input_promise,
               const cuda::ldpc_decoder_cb_configuration& codeblock,
-              cuda_ldpc_decoder_callback_func&&          callback) override;
+              cuda_ldpc_decoder_callback_func&&          callback,
+              bool                                       last_codeblock = false) override;
 
 private:
   using cuda_ldpc_decoder_batch_pool = bounded_object_pool<cuda_ldpc_decoder_batch>;
 
-  void timed_decode(unsigned count, std::chrono::system_clock::time_point timeout_time);
-
   static constexpr unsigned nof_streams = 128;
 
-  task_executor& executor;
-  std::mutex     backend_mutex;
+  /// \brief Dispatch a batch to the GPU and transfer ownership of the decoder.
+  ///
+  /// Acquires the batch, starts the callback-chained pipeline on its stream, and moves the batch's smart-pointer into
+  /// a completion callback token so the batch is returned to the pool on GPU completion.
+  ///
+  /// \param decoder_batch  Owned pointer to the batch to dispatch.
+  static void dispatch_batch(cuda_ldpc_decoder_batch_pool::ptr decoder_batch);
 
-  cuda_ldpc_decoder_batch_pool      decoder_pool;
+  std::mutex backend_mutex;
+
+  /// \brief Pool of CUDA-stream-backed batch decoders.
+  ///
+  /// Each batch is associated with one CUDA stream and can accumulate up to 32 codeblocks before dispatch.
+  cuda_ldpc_decoder_batch_pool decoder_pool;
+
+  /// Currently assigned stream — \c nullptr when no batch is queued.
+  /// Protected by \c backend_mutex.
   cuda_ldpc_decoder_batch_pool::ptr current_decoder;
-  std::atomic<uint64_t>             codeblock_count = {0};
 };
 
 } // namespace ocudu

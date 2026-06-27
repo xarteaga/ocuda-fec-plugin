@@ -332,26 +332,28 @@ void pusch_decoder_cuda_impl::fork_codeblock_task(unsigned cb_id)
     if (decoder_ptr) {
       pusch_codeblock_cuda_decoder& decoder = *decoder_ptr;
       on_use_decoders[cb_id]                = std::move(decoder_ptr);
-      decoder.decode(message,
-                     cb_llrs,
-                     current_config.new_data,
-                     block_crc->get_generator_poly(),
-                     current_config.nof_ldpc_iterations,
-                     cb_meta,
-                     [this, cb_id](bool crc_ok) {
-                       // Release decoder.
-                       on_use_decoders[cb_id].reset();
-                       span<bool> local_cb_crcs = unique_rm_buffer->get_codeblocks_crc();
+      decoder.decode(
+          message,
+          cb_llrs,
+          current_config.new_data,
+          block_crc->get_generator_poly(),
+          current_config.nof_ldpc_iterations,
+          cb_meta,
+          [this, cb_id](bool crc_ok) {
+            // Release decoder.
+            on_use_decoders[cb_id].reset();
+            span<bool> local_cb_crcs = unique_rm_buffer->get_codeblocks_crc();
 
-                       // If successful decoding, flag the CRC, record number of iterations and copy bits to the TB
-                       // buffer.
-                       local_cb_crcs[cb_id] = crc_ok;
-                       cb_stats[cb_id]      = current_config.nof_ldpc_iterations;
+            // If successful decoding, flag the CRC, record number of iterations and copy bits to the TB
+            // buffer.
+            local_cb_crcs[cb_id] = crc_ok;
+            cb_stats[cb_id]      = current_config.nof_ldpc_iterations;
 
-                       if (cb_task_counter.fetch_sub(1) == 1) {
-                         join_and_notify();
-                       }
-                     });
+            if (cb_task_counter.fetch_sub(1) == 1) {
+              join_and_notify();
+            }
+          },
+          cb_id == nof_codeblocks - 1);
     } else {
       logger.error("Not enough codeblock decoder instances.");
       fmt::println("Not enough codeblock decoder instances.");
