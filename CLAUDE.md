@@ -65,8 +65,8 @@ lib/
 └── phy/upper/
     ├── channel_coding/                     LDPC decoder implementation
     │   ├── ldpc_decoder_cuda_backend.cpp               Base graph upload to GPU
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.h    cuda_ldpc_decoder_batch + pipeline state machine
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp  128-stream pool, pipeline with is_idle() guard between phases
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.h    cuda_ldpc_decoder_batch (callback-chained pipeline) + async backend
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp  128-stream pool, callback-driven pipeline (no CPU polling)
     │   └── ldpc_decoder_cuda_impl.cpp                  Per-codeblock: config, H2D queue, backend call
     └── channel_processors/pusch/                   PUSCH integration layer
         ├── factories.cpp                           Factory → creates pusch_decoder instances
@@ -98,8 +98,10 @@ softbits → pusch_decoder_cuda_impl (state machine)
 | Type | Purpose |
 |------|---------|
 | `cuda_ldpc_decoder_backend` | Base class: owns base graph descriptions on device, pure-virtual `decode()`, exposes `create_asynchronous_backend()` factory |
-| `cuda_ldpc_decoder_asynchronous_backend` | Pool of 128 CUDA streams, pipeline state machine with `is_idle()` guards between phases (moved to local header) |
-| `cuda_ldpc_decoder_batch` | Pipeline state machine: `load_input()` → `launch_decode_kernel()` → `unload_output()` → `check_and_complete()` (moved to local header) |
+| `cuda_ldpc_decoder_asynchronous_backend` | Pool of 128 CUDA streams; pipeline phases are chained via CUDA stream callbacks (no CPU polling) |
+| `cuda_ldpc_decoder_batch` | One batch: stores task executor ref, owns `cuda_stream`, chains `launch_decode_kernel` → `unload_output` → `complete` via `set_callback_next_complete()` |
+| `cuda_stream_callback` | Zero-allocation `unique_function<void()>` (32-byte small buffer, `ForbidAlloc=true`) used for stream completion callbacks |
+| `cuda_stream` | RAII CUDA stream with completion callback support via `set_callback_next_complete()` / `on_complete()` |
 | `ldpc_decoder_cuda` | Per-codeblock facade: computes LDPC config, queues H2D, calls backend |
 | `ldpc_decoder` (cuda namespace) | Abstract batch decoder interface; implemented by `ldpc_decoder_impl` |
 | `pusch_codeblock_cuda_decoder` | Wraps rate dematcher + decoder + CRC for one codeblock |
@@ -109,10 +111,13 @@ softbits → pusch_decoder_cuda_impl (state machine)
 ### Concurrency Model
 
 - `cuda_ldpc_decoder_asynchronous_backend` uses a pool of 128 CUDA streams protected by `backend_mutex` — created via `create_asynchronous_backend(task_executor&)` factory
-- Each batch follows a multi-phase pipeline guarded by `stream.is_idle()`: `load_input()` → `launch_decode_kernel()` → `unload_output()` → `check_and_complete()`
-- Between phases, a deferred poll (`wait_*`) checks `is_idle()` before proceeding — executor threads are consumed while polling, but zero threads during GPU execution once the callback fires
-- A timeout fallback (`timed_decode`) handles batch reuse when all streams are occupied
-- Completion callbacks (`check_and_complete`) are deferred back to the `task_executor`
+- Each batch (`cuda_ldpc_decoder_batch`) owns a `task_executor&` and a single `cuda_stream`. Pipeline phases are chained via CUDA stream callbacks instead of executor-thread polling:
+  1. `load_input()` — H2D transfers on the stream, then `set_callback_next_complete()` fires the next phase when idle.
+  2. `launch_decode_kernel()` — defers the kernel launch to the executor, then arms a stream callback that fires `unload_output()`.
+  3. `unload_output()` — defers D2H transfer, then arms a callback that fires `complete()`.
+  4. `complete()` — defers per-codeblock result copying and callback invocation, then fires the external completion callback.
+- Each phase uses `executor.defer()` for device-accessing work (kernel launch, D2H transfer, result processing). No executor thread is held waiting for the GPU — callbacks fire directly from the CUDA runtime when the stream is idle.
+- A timeout fallback (`timed_decode`) handles batch reuse when all streams are occupied.
 
 ### Tracing Events
 
@@ -142,4 +147,4 @@ L1 CUDA trace events (enabled when `OCUDU_L1_DL_TRACE` or `OCUDU_L1_UL_TRACE` is
 
 ### Pipeline Design Note
 
-The async backend uses a multi-phase pipeline with `stream.is_idle()` guards between phases (rather than a single `sequential_decode()`). This was introduced because without idle checks, the kernel and H2D/D2H transfers could overlap incorrectly on the stream. Each `is_idle()` check defers a task back to the executor for polling — this consumes one executor thread per batch until the GPU completes. For high throughput with many concurrent codeblocks, ensure the executor has enough threads to sustain this polling pattern.
+The async backend uses callback-chained pipeline phases inside each `cuda_stream` (rather than CPU polling with `is_idle()`). Each phase defers work to the executor via `executor.defer()` and arms a CUDA stream callback to trigger the next phase. This means **zero executor threads are held waiting for GPU completion** — callbacks fire directly from the CUDA runtime when the stream is idle. A `task_executor` is needed only for the device-accessing operations within each phase (kernel launch, D2H transfer, result processing). The executor still needs enough threads to handle the dispatch workload, but not the wait workload.

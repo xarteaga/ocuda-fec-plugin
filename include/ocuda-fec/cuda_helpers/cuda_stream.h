@@ -1,10 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (C) 2021-2026 Software Radio Systems Limited
 // SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 // Portions of this file may implement 3GPP specifications, which may be subject to additional licensing requirements.
+
 #pragma once
+
+#include "ocudu/adt/unique_function.h"
 #include "ocudu/support/ocudu_assert.h"
 
 namespace ocudu::cuda {
+
+using cuda_stream_callback = unique_function<void(), default_unique_function_buffer_size, true>;
 
 namespace detail {
 
@@ -18,7 +23,7 @@ bool  cuda_stream_is_busy(void* stream);
 class cuda_stream
 {
 public:
-  cuda_stream() : stream_ptr(detail::cuda_stream_create()) {}
+  cuda_stream();
 
   ~cuda_stream()
   {
@@ -31,13 +36,18 @@ public:
   cuda_stream(const cuda_stream&)            = delete;
   cuda_stream& operator=(const cuda_stream&) = delete;
 
-  cuda_stream(cuda_stream&& other) noexcept : stream_ptr(other.stream_ptr) { other.stream_ptr = nullptr; }
+  cuda_stream(cuda_stream&& other) noexcept :
+    stream_ptr(other.stream_ptr), completion_cb(std::move(other.completion_cb))
+  {
+    other.stream_ptr = nullptr;
+  }
 
   cuda_stream& operator=(cuda_stream&& other) noexcept
   {
     if (this != &other) {
       detail::cuda_stream_destroy(stream_ptr);
       stream_ptr       = other.stream_ptr;
+      completion_cb    = std::move(other.completion_cb);
       other.stream_ptr = nullptr;
     }
     return *this;
@@ -49,8 +59,27 @@ public:
 
   void* get() const { return stream_ptr; }
 
+  /// \brief Register a completion callback.
+  ///
+  /// Registers the callback with the CUDA runtime via cudaStreamAddCallback. The callback fires exactly once — call
+  /// set_callback_next_complete() again from within on_complete() after scheduling new work to re-arm the stream.
+  void set_callback_next_complete(cuda_stream_callback&& cb);
+
+  /// \brief Callback entry point invoked by CUDA runtime.
+  ///
+  /// Called on a CUDA-owned thread when the stream's pending work completes.  Dispatches to the stored completion_cb_.
+  /// Override in a derived class to add custom per-completion behavior (e.g. re-scheduling new work).
+  void on_complete()
+  {
+    if (!completion_cb.is_empty()) {
+      completion_cb();
+      completion_cb = {};
+    }
+  }
+
 private:
-  void* stream_ptr = nullptr;
+  void*                stream_ptr = nullptr;
+  cuda_stream_callback completion_cb;
 };
 
 class stream_sync_token

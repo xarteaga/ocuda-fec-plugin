@@ -8,6 +8,7 @@ This plugin provides GPU-offloaded LDPC decoding for the 5G PUSCH (Physical Upli
 
 - GPU-accelerated LDPC decoding using 3GPP 5G LDPC base graphs BG1 (rate 1/3) and BG2 (rate 1/5)
 - Asynchronous execution with a pool of 128 CUDA streams for concurrent codeblock processing
+- Callback-driven pipeline — phases are chained via CUDA stream callbacks instead of CPU polling, minimising executor thread usage
 - Support for HARQ soft combining across retransmissions
 - Full PUSCH codeblock segmentation, rate dematching, decoding, and CRC verification
 - Pluggable architecture — integrates with OCUDU's PUSCH decoder factory pattern
@@ -39,8 +40,8 @@ lib/                        Source files
 └── phy/upper/
     ├── channel_coding/             LDPC decoder implementation
     │   ├── ldpc_decoder_cuda_backend.cpp                   Base graph upload to GPU
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.h        cuda_ldpc_decoder_batch + multi-phase pipeline
-    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp      128-stream pool, pipeline with is_idle() phases
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.h        cuda_ldpc_decoder_batch (callback-chained pipeline) + async backend
+    │   ├── ldpc_decoder_cuda_asynchronous_backend.cpp      128-stream pool, callback-driven pipeline (no CPU polling)
     │   └── ldpc_decoder_cuda_impl.cpp                      Per-codeblock: config, H2D queue, backend call
     └── channel_processors/pusch/     PUSCH integration layer
         ├── factories.cpp                       Factory → creates pusch_decoder instances
