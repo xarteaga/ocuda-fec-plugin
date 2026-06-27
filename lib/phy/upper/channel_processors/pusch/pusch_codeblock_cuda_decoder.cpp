@@ -20,7 +20,8 @@ void pusch_codeblock_cuda_decoder::decode(bit_buffer                            
                                           ocudu::crc_generator_poly                    crc_poly,
                                           unsigned                                     nof_ldpc_iterations,
                                           const codeblock_metadata&                    metadata,
-                                          pusch_codeblock_cuda_decoder_callback_func&& callback_)
+                                          pusch_codeblock_cuda_decoder_callback_func&& callback_,
+                                          bool                                         last_codeblock)
 {
   callback = std::move(callback_);
   cb_data  = cb_data_;
@@ -40,7 +41,10 @@ void pusch_codeblock_cuda_decoder::decode(bit_buffer                            
 
   // Decode with early stop.
   decoder->decode(
-      cb_data, cb_llrs, decoder_config, [this, crc_poly, nof_filler_bits = metadata.cb_specific.nof_filler_bits]() {
+      cb_data,
+      cb_llrs,
+      decoder_config,
+      [this, crc_poly, nof_filler_bits = metadata.cb_specific.nof_filler_bits]() {
         // Select CRC calculator.
         crc_calculator* crc = select_crc(crc_poly);
         ocudu_assert(crc != nullptr, "Invalid CRC calculator.");
@@ -48,5 +52,6 @@ void pusch_codeblock_cuda_decoder::decode(bit_buffer                            
         // Discard filler bits for the CRC.
         unsigned nof_significant_bits = cb_data.size() - nof_filler_bits;
         callback(crc->calculate(cb_data.first(nof_significant_bits)) == 0);
-      });
+      },
+      last_codeblock);
 }

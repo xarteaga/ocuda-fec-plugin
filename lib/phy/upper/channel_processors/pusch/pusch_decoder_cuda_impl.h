@@ -185,7 +185,7 @@ private:
   /// CRC if applicable. Also, it notifies the decoder result.
   void join_and_notify();
 
-  /// Concatenates code blocks and returns the CRC checksum.
+  /// \brief Concatenates code blocks and returns the CRC checksum.
   unsigned concatenate_codeblocks();
 };
 

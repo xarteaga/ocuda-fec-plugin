@@ -34,11 +34,12 @@ public:
 
   explicit ldpc_decoder_cuda_impl(std::shared_ptr<cuda_ldpc_decoder_backend> backend_);
 
-  // See the ldpc_decoder_cuda interface for the documentation.
+  // See the interface ldpc_decoder_cuda for documentation.
   void decode(bit_buffer&                       output,
               span<const log_likelihood_ratio>  input,
               const configuration&              cfg,
-              cuda_ldpc_decoder_callback_func&& callback) override;
+              cuda_ldpc_decoder_callback_func&& callback,
+              bool                              last_codeblock) override;
 
 private:
   std::shared_ptr<cuda_ldpc_decoder_backend> cuda_backend;
@@ -67,7 +68,8 @@ ldpc_decoder_cuda_impl::ldpc_decoder_cuda_impl(std::shared_ptr<cuda_ldpc_decoder
 void ldpc_decoder_cuda_impl::decode(bit_buffer&                       output,
                                     span<const log_likelihood_ratio>  input,
                                     const configuration&              cfg,
-                                    cuda_ldpc_decoder_callback_func&& callback)
+                                    cuda_ldpc_decoder_callback_func&& callback,
+                                    bool                              last_codeblock)
 {
   /// Starting position of different redundancy versions (k0), as per TS38.212 Table 5.4.2.1-2.
   static constexpr std::array<double, 4> shift_factor_bg1 = {0, 17, 33, 56};
@@ -177,7 +179,7 @@ void ldpc_decoder_cuda_impl::decode(bit_buffer&                       output,
                                                           .modulation_order    = get_bits_per_symbol(cfg.modulation),
                                                           .new_data            = cfg.new_data};
 
-  cuda_backend->decode(output.get_buffer(), input_promise, codeblock_config, std::move(callback));
+  cuda_backend->decode(output.get_buffer(), input_promise, codeblock_config, std::move(callback), last_codeblock);
 }
 
 std::unique_ptr<ldpc_decoder_cuda> ocudu::create_ldpc_decoder_cuda(std::shared_ptr<cuda_ldpc_decoder_backend> backend)

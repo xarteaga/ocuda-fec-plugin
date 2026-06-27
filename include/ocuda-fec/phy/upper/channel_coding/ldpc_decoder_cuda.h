@@ -63,14 +63,17 @@ public:
   /// performing HARQ chase combining or incremental redundancy) → soft-bit loading → iterative LDPC message-passing →
   /// hard decision → CRC verification.
   ///
-  /// \param[out] output   Bit buffer for the decoded code block (information bits).
-  /// \param[in]  input    LLRs for the rate-matched code block.
-  /// \param[in]  cfg      LDPC decoder configuration (modulation, RV, base graph, etc.).
-  /// \param[in]  callback Completion callback invoked when decoding finishes.
+  /// \param[out] output       Bit buffer for the decoded code block (information bits).
+  /// \param[in]  input        LLRs for the rate-matched code block.
+  /// \param[in]  cfg          LDPC decoder configuration (modulation, RV, base graph, etc.).
+  /// \param[in]  callback     Completion callback invoked when decoding finishes.
+  /// \param[in]  last_codeblock Set to \c true when this is the last codeblock of the reception, triggering
+  ///                           immediate synchronous dispatch of any pending batch.
   virtual void decode(bit_buffer&                       output,
                       span<const log_likelihood_ratio>  input,
                       const configuration&              cfg,
-                      cuda_ldpc_decoder_callback_func&& callback) = 0;
+                      cuda_ldpc_decoder_callback_func&& callback,
+                      bool                              last_codeblock = false) = 0;
 };
 
 /// \brief Create an LDPC decoder for a CUDA backend.
