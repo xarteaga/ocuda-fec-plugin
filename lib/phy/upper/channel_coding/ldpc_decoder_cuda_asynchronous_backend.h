@@ -171,7 +171,7 @@ public:
               cuda::host_to_device_promise<int8_t>       input_promise,
               const cuda::ldpc_decoder_cb_configuration& codeblock,
               cuda_ldpc_decoder_callback_func&&          callback,
-              bool                                       last_codeblock = false) override;
+              bool                                       last_codeblock) override;
 
 private:
   using cuda_ldpc_decoder_batch_pool = bounded_object_pool<cuda_ldpc_decoder_batch>;
